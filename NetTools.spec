@@ -11,12 +11,12 @@ block_cipher = None
 version_info = {
     'CompanyName': 'NetTools',
     'FileDescription': 'NetTools - Network Engineer Toolbox',
-    'FileVersion': '1.0.0.0',
+    'FileVersion': '1.2.0.0',
     'InternalName': 'NetTools',
     'LegalCopyright': 'MIT License - Free Open Source Software',
     'OriginalFilename': 'NetTools.exe',
     'ProductName': 'NetTools Network Toolbox',
-    'ProductVersion': '1.0.0.0',
+    'ProductVersion': '1.2.0.0',
 }
 
 a = Analysis(

@@ -355,8 +355,146 @@ class NetworkTools:
 class SystemTools:
     """系统工具集"""
 
+    # 常用公共 DNS 服务器
+    PUBLIC_DNS = {
+        "阿里 DNS": ("223.5.5.5", "223.6.6.6"),
+        "腾讯 DNS": ("119.29.29.29", "182.254.116.116"),
+        "百度 DNS": ("180.76.76.76", ""),
+        "Google DNS": ("8.8.8.8", "8.8.4.4"),
+        "Cloudflare DNS": ("1.1.1.1", "1.0.0.1"),
+        "114 DNS": ("114.114.114.114", "114.114.115.115"),
+        "OpenDNS": ("208.67.222.222", "208.67.220.220"),
+        "DNSPod": ("119.29.29.29", "182.254.118.118"),
+        "自动获取 (DHCP)": ("", ""),
+    }
+
     def __init__(self):
         pass
+
+    # ==================== DNS 修改 ====================
+    def get_dns_servers(self):
+        """获取当前所有网络适配器的 DNS 配置"""
+        adapters = []
+        try:
+            import tempfile
+            tmpfile = os.path.join(tempfile.gettempdir(), 'nettools_dns_output.txt')
+            os.system(f'chcp 65001 > nul && netsh interface ip show dnsservers > "{tmpfile}"')
+            with open(tmpfile, 'r', encoding='utf-8', errors='replace') as f:
+                output = f.read()
+            try:
+                os.remove(tmpfile)
+            except Exception:
+                pass
+
+            current_adapter = None
+            dns_servers = []
+            for line in output.split('\n'):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                # 匹配适配器名称行: "Configuration for interface \"xxx\""
+                if 'Configuration for interface' in stripped:
+                    if current_adapter and dns_servers:
+                        adapters.append({
+                            "adapter": current_adapter,
+                            "dns_servers": dns_servers.copy()
+                        })
+                    # 提取适配器名称
+                    match = re.search(r'"([^"]*)"', stripped)
+                    if match:
+                        current_adapter = match.group(1)
+                    else:
+                        # 没有引号的情况
+                        parts = stripped.split('"')
+                        if len(parts) >= 2:
+                            current_adapter = parts[1]
+                        else:
+                            current_adapter = stripped.split('interface')[-1].strip()
+                    dns_servers = []
+                elif current_adapter:
+                    # DNS 服务器行
+                    if 'Statically Configured DNS Servers' in stripped:
+                        val = stripped.split(':', 1)[-1].strip()
+                        if val and val.lower() != 'none':
+                            dns_servers.append(val)
+                    elif 'DNS servers configured through DHCP' in stripped:
+                        val = stripped.split(':', 1)[-1].strip()
+                        if val and val.lower() != 'none':
+                            dns_servers.append(f"DHCP: {val}")
+                        else:
+                            dns_servers.append("DHCP (自动获取)")
+                    # 续行（多行 DNS）
+                    elif dns_servers and re.match(r'^\d+\.\d+\.\d+\.\d+$', stripped):
+                        # 检查上一行是否已经有这个 IP
+                        last = dns_servers[-1]
+                        if 'DHCP:' in last:
+                            dns_servers.append(stripped)
+                        else:
+                            dns_servers.append(stripped)
+                    elif 'Register with which suffix' in stripped:
+                        pass  # 忽略
+
+            # 保存最后一个适配器
+            if current_adapter and dns_servers:
+                adapters.append({
+                    "adapter": current_adapter,
+                    "dns_servers": dns_servers.copy()
+                })
+
+            # 过滤掉环回适配器
+            adapters = [a for a in adapters if 'Loopback' not in a['adapter'] and '环回' not in a['adapter']]
+
+            if not adapters:
+                adapters.append({"adapter": "未检测到适配器", "dns_servers": ["请检查网络连接"]})
+
+        except Exception as e:
+            adapters.append({"adapter": "错误", "dns_servers": [str(e)]})
+
+        return adapters
+
+    def set_dns(self, adapter_name, primary_dns, secondary_dns=""):
+        """修改指定网络适配器的 DNS 服务器"""
+        try:
+            if not adapter_name:
+                return False, "请选择网络适配器"
+
+            if not primary_dns:
+                # 设为自动获取
+                cmd = f'netsh interface ip set dnsservers name="{adapter_name}" source=dhcp'
+                result = subprocess.run(cmd, capture_output=True, text=True, shell=True, encoding='gbk')
+                if result.returncode == 0:
+                    return True, f"已为 [{adapter_name}] 设为自动获取 DNS"
+                else:
+                    return False, result.stdout.strip() or result.stderr.strip()
+
+            # 设置首选 DNS
+            cmd = f'netsh interface ip set dnsservers name="{adapter_name}" source=static address={primary_dns} register=primary validate=no'
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=True, encoding='gbk')
+            if result.returncode != 0:
+                return False, f"设置首选 DNS 失败: {result.stdout.strip() or result.stderr.strip()}"
+
+            # 设置备用 DNS
+            if secondary_dns:
+                cmd2 = f'netsh interface ip add dnsservers name="{adapter_name}" address={secondary_dns} index=2 validate=no'
+                result2 = subprocess.run(cmd2, capture_output=True, text=True, shell=True, encoding='gbk')
+                if result2.returncode != 0:
+                    # 备用 DNS 设置失败不算致命错误
+                    return True, f"已为 [{adapter_name}] 设置 DNS: {primary_dns} (备用 DNS 设置失败)"
+
+            return True, f"已为 [{adapter_name}] 设置 DNS: {primary_dns}" + (
+                f", 备用: {secondary_dns}" if secondary_dns else "")
+
+        except Exception as e:
+            return False, f"设置 DNS 失败: {str(e)}\n提示: 请以管理员身份运行"
+
+    def flush_dns_cache(self):
+        """刷新 DNS 缓存"""
+        try:
+            subprocess.run('ipconfig /flushdns', capture_output=True, text=True, shell=True)
+            return True, "DNS 缓存已刷新"
+        except Exception as e:
+            return False, str(e)
 
     # ==================== IP 计算器 ====================
     def ip_calculator(self, ip_cidr):
@@ -449,6 +587,185 @@ class SystemTools:
         try:
             result = subprocess.run('ipconfig /all', capture_output=True, text=True, shell=True, encoding='gbk')
             return {"success": True, "output": result.stdout}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ==================== Hosts 文件管理 ====================
+    HOSTS_PATH = r"C:\Windows\System32\drivers\etc\hosts"
+
+    def get_hosts_content(self):
+        """读取 hosts 文件内容"""
+        try:
+            with open(self.HOSTS_PATH, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            return {"success": True, "content": content}
+        except PermissionError:
+            return {"success": False, "error": "权限不足，请以管理员身份运行"}
+        except FileNotFoundError:
+            return {"success": False, "error": f"hosts 文件不存在: {self.HOSTS_PATH}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def save_hosts_content(self, content):
+        """保存 hosts 文件内容"""
+        try:
+            with open(self.HOSTS_PATH, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(content)
+            return True, "hosts 文件已保存"
+        except PermissionError:
+            return False, "权限不足，请以管理员身份运行"
+        except Exception as e:
+            return False, f"保存失败: {str(e)}"
+
+    def backup_hosts(self):
+        """备份 hosts 文件"""
+        import shutil
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{self.HOSTS_PATH}.backup_{timestamp}"
+            shutil.copy2(self.HOSTS_PATH, backup_path)
+            return True, f"已备份到: {backup_path}"
+        except PermissionError:
+            return False, "权限不足，请以管理员身份运行"
+        except Exception as e:
+            return False, f"备份失败: {str(e)}"
+
+    def restore_hosts(self, backup_path):
+        """恢复 hosts 文件备份"""
+        import shutil
+        try:
+            if not os.path.exists(backup_path):
+                return False, f"备份文件不存在: {backup_path}"
+            shutil.copy2(backup_path, self.HOSTS_PATH)
+            return True, "hosts 文件已恢复"
+        except PermissionError:
+            return False, "权限不足，请以管理员身份运行"
+        except Exception as e:
+            return False, f"恢复失败: {str(e)}"
+
+    def list_hosts_backups(self):
+        """列出所有 hosts 备份文件"""
+        backups = []
+        try:
+            backup_dir = os.path.dirname(self.HOSTS_PATH)
+            for f in os.listdir(backup_dir):
+                if f.startswith("hosts.backup_"):
+                    full_path = os.path.join(backup_dir, f)
+                    mtime = datetime.fromtimestamp(os.path.getmtime(full_path))
+                    size = os.path.getsize(full_path)
+                    backups.append({
+                        "filename": f,
+                        "path": full_path,
+                        "time": mtime.strftime("%Y-%m-%d %H:%M:%S"),
+                        "size": f"{size:,} 字节"
+                    })
+            backups.sort(key=lambda x: x['time'], reverse=True)
+        except Exception:
+            pass
+        return backups
+
+    # ==================== 路由表查看 ====================
+    def get_route_table(self):
+        """获取路由表"""
+        try:
+            import tempfile
+            tmpfile = os.path.join(tempfile.gettempdir(), 'nettools_route_output.txt')
+            os.system(f'chcp 65001 > nul && route print > "{tmpfile}"')
+            with open(tmpfile, 'r', encoding='utf-8', errors='replace') as f:
+                output = f.read()
+            try:
+                os.remove(tmpfile)
+            except Exception:
+                pass
+            return {"success": True, "output": output}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ==================== ARP 表查看 ====================
+    def get_arp_table(self):
+        """获取 ARP 表"""
+        try:
+            import tempfile
+            tmpfile = os.path.join(tempfile.gettempdir(), 'nettools_arp_output.txt')
+            os.system(f'chcp 65001 > nul && arp -a > "{tmpfile}"')
+            with open(tmpfile, 'r', encoding='utf-8', errors='replace') as f:
+                output = f.read()
+            try:
+                os.remove(tmpfile)
+            except Exception:
+                pass
+
+            # 解析 ARP 表
+            entries = []
+            current_iface = ""
+            for line in output.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if 'Interface:' in line or '接口:' in line:
+                    current_iface = line.split(':', 1)[-1].strip()
+                    continue
+                # 匹配 IP - MAC - 类型
+                parts = line.split()
+                if len(parts) >= 3:
+                    ip = parts[0]
+                    mac = parts[1]
+                    if re.match(r'^[\da-fA-F]{1,2}-[\da-fA-F]{1,2}-[\da-fA-F]{1,2}-[\da-fA-F]{1,2}-[\da-fA-F]{1,2}-[\da-fA-F]{1,2}$', mac):
+                        arp_type = ' '.join(parts[2:])
+                        entries.append({
+                            "interface": current_iface,
+                            "ip": ip,
+                            "mac": mac,
+                            "type": arp_type
+                        })
+
+            return {"success": True, "output": output, "entries": entries}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ==================== 网卡流量统计 ====================
+    def get_network_stats(self):
+        """获取网卡流量统计信息"""
+        try:
+            import tempfile
+            tmpfile = os.path.join(tempfile.gettempdir(), 'nettools_netstat_output.txt')
+            os.system(f'chcp 65001 > nul && netstat -e > "{tmpfile}"')
+            with open(tmpfile, 'r', encoding='utf-8', errors='replace') as f:
+                netstat_output = f.read()
+            try:
+                os.remove(tmpfile)
+            except Exception:
+                pass
+
+            # 解析接口统计
+            bytes_received = 0
+            bytes_sent = 0
+            for line in netstat_output.split('\n'):
+                if 'Bytes' in line or '字节' in line:
+                    parts = line.split()
+                    nums = [int(p.replace(',', '')) for p in parts if p.replace(',', '').isdigit()]
+                    if len(nums) >= 2:
+                        bytes_received = nums[0]
+                        bytes_sent = nums[1]
+
+            # 获取各网卡详细信息
+            import tempfile as tmp2
+            tmpfile2 = os.path.join(tmp2.gettempdir(), 'nettools_if_output.txt')
+            os.system(f'chcp 65001 > nul && netsh interface ip show interfaces > "{tmpfile2}"')
+            with open(tmpfile2, 'r', encoding='utf-8', errors='replace') as f:
+                if_output = f.read()
+            try:
+                os.remove(tmpfile2)
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "total_bytes_received": bytes_received,
+                "total_bytes_sent": bytes_sent,
+                "netstat_raw": netstat_output,
+                "interfaces_raw": if_output
+            }
         except Exception as e:
             return {"success": False, "error": str(e)}
 
