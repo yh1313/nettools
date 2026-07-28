@@ -38,7 +38,7 @@ if %errorlevel% equ 0 (
     echo.
     echo [5/5] 打包为发布压缩包...
     cd dist
-    powershell -Command "Compress-Archive -Path 'NetTools\*' -DestinationPath 'NetTools_v1.2.zip' -Force"
+    powershell -Command "Compress-Archive -Path 'NetTools\*' -DestinationPath 'NetTools_v1.3.zip' -Force"
     cd ..
     
     echo.
@@ -46,12 +46,12 @@ if %errorlevel% equ 0 (
     echo   打包成功！
     echo   输出目录: dist\NetTools\
     echo   主程序:   dist\NetTools\NetTools.exe
-    echo   压缩包:   dist\NetTools_v1.2.zip
+    echo   压缩包:   dist\NetTools_v1.3.zip
     echo ============================================
     echo.
     echo 分发方式:
     echo   1. 将 dist\NetTools 整个文件夹复制给其他人
-    echo   2. 或解压 dist\NetTools_v1.0.zip 即可使用
+    echo   2. 或解压 dist\NetTools_v1.3.zip 即可使用
     echo.
     echo 安全优化:
     echo   - onedir 目录模式（非 onefile 单文件）
