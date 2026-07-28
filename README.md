@@ -1,6 +1,6 @@
 # NetTools - 网络工程师工具箱
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.5-blue)
 ![Python](https://img.shields.io/badge/python-3.8%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -59,7 +59,7 @@ python build_exe.py
 
 ### 下载预编译版本
 
-前往 [Releases](https://github.com/YOUR_USERNAME/nettools/releases) 页面下载最新的 `NetTools_v1.0.zip`，解压后双击 `NetTools.exe` 即可运行。
+前往 [Releases](https://github.com/YOUR_USERNAME/nettools/releases) 页面下载最新的 `NetTools_v1.5.zip`，解压后双击 `NetTools.exe` 即可运行。
 
 ## 📦 依赖说明
 
